@@ -23,11 +23,11 @@ export const PERSONS: PersonConfig[] = [
   {
     key: 'small',
     label: '작은딸',
-    color: '#8b5cf6',
-    bgClass: 'bg-violet-500',
-    lightClass: 'bg-violet-50',
-    activeTabClass: 'bg-violet-400 text-white',
-    buttonClass: 'bg-violet-400 hover:bg-violet-500 text-white',
+    color: '#eab308',
+    bgClass: 'bg-yellow-500',
+    lightClass: 'bg-yellow-50',
+    activeTabClass: 'bg-yellow-400 text-white',
+    buttonClass: 'bg-yellow-400 hover:bg-yellow-500 text-white',
   },
   {
     key: 'mom',

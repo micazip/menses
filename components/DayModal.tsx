@@ -3,11 +3,13 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Cycle, Symptom, PERSONS, Person, PAIN_LEVELS } from '@/types'
+import { todayStr } from '@/lib/utils'
 
 interface Props {
   date: string
   cycles: Cycle[]
   symptoms: Symptom[]
+  initialPerson?: Person
   onClose: () => void
 }
 
@@ -30,16 +32,28 @@ function isInCycle(date: string, c: Cycle): boolean {
   return date <= c.end_date
 }
 
-export default function DayModal({ date, cycles, symptoms: initSymptoms, onClose }: Props) {
-  const [tab, setTab] = useState<Person>('big')
+export default function DayModal({ date, cycles: initCycles, symptoms: initSymptoms, initialPerson, onClose }: Props) {
+  const getInitialTab = (): Person => {
+    if (initialPerson) return initialPerson
+    const p = PERSONS.find(p => initCycles.some(c => c.person === p.key && isInCycle(date, c)))
+    return p?.key ?? 'big'
+  }
+  const [tab, setTab] = useState<Person>(getInitialTab)
   const [saving, setSaving] = useState(false)
+  const [periodDays, setPeriodDays] = useState(6)
+  const [editPeriodDays, setEditPeriodDays] = useState(6)
+  const [editingPeriod, setEditingPeriod] = useState(false)
+  // cycleStarted[person] = true means user clicked "생리 시작일" but not yet saved
+  const [cycleStarted, setCycleStarted] = useState<Partial<Record<Person, boolean>>>({})
+  const [localCycles, setLocalCycles] = useState<Cycle[]>(initCycles)
+  const [localSymptoms, setLocalSymptoms] = useState<Symptom[]>(initSymptoms)
   const [forms, setForms] = useState<Record<Person, SymptomForm>>({
     big: { ...DEFAULT_FORM },
     small: { ...DEFAULT_FORM },
     mom: { ...DEFAULT_FORM },
   })
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = todayStr()
   const isFuture = date > today
 
   useEffect(() => {
@@ -56,7 +70,7 @@ export default function DayModal({ date, cycles, symptoms: initSymptoms, onClose
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date])
 
-  const getCycle = (person: Person) => cycles.find(c => c.person === person && isInCycle(date, c)) ?? null
+  const getCycle = (person: Person) => localCycles.find(c => c.person === person && isInCycle(date, c)) ?? null
 
   const getCycleDay = (person: Person): number | null => {
     const c = getCycle(person)
@@ -64,15 +78,65 @@ export default function DayModal({ date, cycles, symptoms: initSymptoms, onClose
     return Math.floor((new Date(date).getTime() - new Date(c.start_date).getTime()) / 86400000) + 1
   }
 
-  const handleStartCycle = async (person: Person) => {
+  // "저장" 버튼: 생리 시작(선택된 경우) + 증상을 한번에 저장
+  const handleSave = async (person: Person) => {
+    setSaving(true)
+    const form = forms[person]
+    try {
+      // 생리 시작일이 선택된 경우 저장
+      if (cycleStarted[person]) {
+        const endDate = new Date(date)
+        endDate.setDate(endDate.getDate() + periodDays - 1)
+        const endDateStr = endDate.toISOString().split('T')[0]
+
+        // 새 사이클과 겹치는 기존 사이클 삭제 (중복 방지)
+        const overlapping = localCycles.filter(c =>
+          c.person === person &&
+          c.start_date <= endDateStr &&
+          (!c.end_date || c.end_date >= date)
+        )
+        for (const c of overlapping) {
+          await supabase.from('cycles').delete().eq('id', c.id)
+        }
+
+        await supabase.from('cycles').insert({ person, start_date: date, end_date: endDateStr })
+      }
+
+      // 증상 저장
+      const existing = localSymptoms.find(s => s.person === person && s.date === date)
+      if (existing) {
+        await supabase.from('symptoms').update({
+          pain_level: form.pain_level,
+          headache: form.headache,
+          notes: form.notes.trim() || null,
+        }).eq('id', existing.id)
+      } else if (cycleStarted[person] || form.pain_level > 0 || form.headache || form.notes.trim()) {
+        // 증상이 있거나 생리 시작일 기록할 때만 증상 저장
+        await supabase.from('symptoms').insert({
+          person, date,
+          pain_level: form.pain_level,
+          headache: form.headache,
+          notes: form.notes.trim() || null,
+        })
+      }
+
+      onClose()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleUpdatePeriod = async (person: Person) => {
+    const c = getCycle(person)
+    if (!c) return
     setSaving(true)
     try {
-      // Close any open cycle for this person
-      const open = cycles.find(c => c.person === person && !c.end_date)
-      if (open && open.start_date <= date) {
-        await supabase.from('cycles').update({ end_date: date }).eq('id', open.id)
-      }
-      await supabase.from('cycles').insert({ person, start_date: date, end_date: null })
+      const endDate = new Date(c.start_date)
+      endDate.setDate(endDate.getDate() + editPeriodDays - 1)
+      const endDateStr = endDate.toISOString().split('T')[0]
+      await supabase.from('cycles').update({ end_date: endDateStr }).eq('id', c.id)
+      setLocalCycles(prev => prev.map(x => x.id === c.id ? { ...x, end_date: endDateStr } : x))
+      setEditingPeriod(false)
       onClose()
     } finally {
       setSaving(false)
@@ -83,7 +147,10 @@ export default function DayModal({ date, cycles, symptoms: initSymptoms, onClose
     setSaving(true)
     try {
       const c = getCycle(person)
-      if (c) await supabase.from('cycles').update({ end_date: date }).eq('id', c.id)
+      if (c) {
+        await supabase.from('cycles').update({ end_date: date }).eq('id', c.id)
+        setLocalCycles(prev => prev.map(x => x.id === c.id ? { ...x, end_date: date } : x))
+      }
       onClose()
     } finally {
       setSaving(false)
@@ -94,32 +161,9 @@ export default function DayModal({ date, cycles, symptoms: initSymptoms, onClose
     setSaving(true)
     try {
       const c = getCycle(person)
-      if (c) await supabase.from('cycles').delete().eq('id', c.id)
-      onClose()
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleSaveSymptoms = async (person: Person) => {
-    setSaving(true)
-    const form = forms[person]
-    try {
-      const existing = initSymptoms.find(s => s.person === person && s.date === date)
-      if (existing) {
-        await supabase.from('symptoms').update({
-          pain_level: form.pain_level,
-          headache: form.headache,
-          notes: form.notes.trim() || null,
-        }).eq('id', existing.id)
-      } else {
-        await supabase.from('symptoms').insert({
-          person,
-          date,
-          pain_level: form.pain_level,
-          headache: form.headache,
-          notes: form.notes.trim() || null,
-        })
+      if (c) {
+        await supabase.from('cycles').delete().eq('id', c.id)
+        setLocalCycles(prev => prev.filter(x => x.id !== c.id))
       }
       onClose()
     } finally {
@@ -130,8 +174,12 @@ export default function DayModal({ date, cycles, symptoms: initSymptoms, onClose
   const handleDeleteSymptom = async (person: Person) => {
     setSaving(true)
     try {
-      const existing = initSymptoms.find(s => s.person === person && s.date === date)
-      if (existing) await supabase.from('symptoms').delete().eq('id', existing.id)
+      const existing = localSymptoms.find(s => s.person === person && s.date === date)
+      if (existing) {
+        await supabase.from('symptoms').delete().eq('id', existing.id)
+        setLocalSymptoms(prev => prev.filter(s => s.id !== existing.id))
+      }
+      setForms(prev => ({ ...prev, [person]: { ...DEFAULT_FORM } }))
       onClose()
     } finally {
       setSaving(false)
@@ -146,15 +194,17 @@ export default function DayModal({ date, cycles, symptoms: initSymptoms, onClose
   const cycle = getCycle(tab)
   const cycleDay = getCycleDay(tab)
   const form = forms[tab]
-  const existingSymptom = initSymptoms.find(s => s.person === tab && s.date === date)
+  const existingSymptom = localSymptoms.find(s => s.person === tab && s.date === date)
+  const isCycleStarted = !!cycleStarted[tab]
 
-  const accentBg = tab === 'big' ? 'bg-rose-50' : tab === 'small' ? 'bg-violet-50' : 'bg-teal-50'
-  const accentText = tab === 'big' ? 'text-rose-500' : tab === 'small' ? 'text-violet-500' : 'text-teal-600'
+  const accentBg = tab === 'big' ? 'bg-rose-50' : tab === 'small' ? 'bg-yellow-50' : 'bg-teal-50'
+  const accentText = tab === 'big' ? 'text-rose-500' : tab === 'small' ? 'text-yellow-500' : 'text-teal-600'
   const accentBtn = tab === 'big'
     ? 'bg-rose-400 hover:bg-rose-500'
     : tab === 'small'
-    ? 'bg-violet-400 hover:bg-violet-500'
+    ? 'bg-yellow-400 hover:bg-yellow-500'
     : 'bg-teal-500 hover:bg-teal-600'
+  const accentBorder = tab === 'big' ? 'border-rose-300' : tab === 'small' ? 'border-yellow-300' : 'border-teal-300'
 
   return (
     <div
@@ -186,7 +236,6 @@ export default function DayModal({ date, cycles, symptoms: initSymptoms, onClose
                   className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${
                     isActive ? person.activeTabClass : 'bg-gray-100 text-gray-500'
                   }`}
-                  style={isActive ? {} : {}}
                 >
                   {p.label}
                   {day !== null && (
@@ -206,7 +255,7 @@ export default function DayModal({ date, cycles, symptoms: initSymptoms, onClose
             <h3 className={`font-semibold text-sm mb-3 ${accentText}`}>🩸 생리 주기</h3>
 
             {cycle ? (
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <p className="text-sm text-gray-600">
                   시작일: <span className="font-medium text-gray-800">{formatKorDate(cycle.start_date)}</span>
                   {cycleDay && <span className={`ml-2 text-xs font-semibold ${accentText}`}>{cycleDay}일째</span>}
@@ -214,39 +263,129 @@ export default function DayModal({ date, cycles, symptoms: initSymptoms, onClose
                 {cycle.end_date && (
                   <p className="text-sm text-gray-600">
                     종료일: <span className="font-medium text-gray-800">{formatKorDate(cycle.end_date)}</span>
+                    <span className="ml-2 text-xs text-gray-400">
+                      ({Math.round((new Date(cycle.end_date).getTime() - new Date(cycle.start_date).getTime()) / 86400000) + 1}일)
+                    </span>
                   </p>
                 )}
-                <div className="flex gap-2 pt-1">
-                  {!cycle.end_date && !isFuture && (
+
+                {/* 기간 수정 */}
+                {editingPeriod ? (
+                  <div className="space-y-2">
+                    <p className="text-xs text-gray-500">기간 수정</p>
+                    <div className="flex gap-1.5">
+                      {[4, 5, 6, 7, 8, 9, 10].map(d => (
+                        <button
+                          key={d}
+                          onClick={() => setEditPeriodDays(d)}
+                          className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                            editPeriodDays === d
+                              ? `${accentBtn} text-white scale-105 shadow-sm`
+                              : 'bg-white text-gray-600 hover:bg-gray-50'
+                          }`}
+                        >
+                          {d}일
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleUpdatePeriod(tab)}
+                        disabled={saving}
+                        className={`flex-1 py-2 rounded-xl text-white text-sm font-medium transition-colors disabled:opacity-50 ${accentBtn}`}
+                      >
+                        수정 완료
+                      </button>
+                      <button
+                        onClick={() => setEditingPeriod(false)}
+                        className="px-4 py-2 rounded-xl bg-white border border-gray-200 text-gray-500 text-sm font-medium"
+                      >
+                        취소
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    {!isFuture && (
+                      <button
+                        onClick={() => {
+                          const days = cycle.end_date
+                            ? Math.round((new Date(cycle.end_date).getTime() - new Date(cycle.start_date).getTime()) / 86400000) + 1
+                            : 6
+                          setEditPeriodDays(Math.min(10, Math.max(4, days)))
+                          setEditingPeriod(true)
+                        }}
+                        disabled={saving}
+                        className="flex-1 py-2 rounded-xl bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium transition-colors disabled:opacity-50"
+                      >
+                        기간 수정
+                      </button>
+                    )}
+                    {!cycle.end_date && !isFuture && (
+                      <button
+                        onClick={() => handleEndCycle(tab)}
+                        disabled={saving}
+                        className="flex-1 py-2 rounded-xl bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium transition-colors disabled:opacity-50"
+                      >
+                        종료로 기록
+                      </button>
+                    )}
                     <button
-                      onClick={() => handleEndCycle(tab)}
+                      onClick={() => handleDeleteCycle(tab)}
                       disabled={saving}
-                      className="flex-1 py-2 rounded-xl bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium transition-colors disabled:opacity-50"
+                      className="px-4 py-2 rounded-xl bg-white border border-red-200 hover:bg-red-50 text-red-400 text-sm font-medium transition-colors disabled:opacity-50"
                     >
-                      종료로 기록
+                      삭제
                     </button>
-                  )}
-                  <button
-                    onClick={() => handleDeleteCycle(tab)}
-                    disabled={saving}
-                    className="px-4 py-2 rounded-xl bg-white border border-red-200 hover:bg-red-50 text-red-400 text-sm font-medium transition-colors disabled:opacity-50"
-                  >
-                    삭제
-                  </button>
+                  </div>
+                )}
+              </div>
+            ) : !isFuture ? (
+              <div className="space-y-3">
+                {/* 기간 선택 */}
+                <div>
+                  <p className="text-xs text-gray-500 mb-2">생리 기간</p>
+                  <div className="flex gap-1.5">
+                    {[4, 5, 6, 7, 8, 9, 10].map(d => (
+                      <button
+                        key={d}
+                        onClick={() => setPeriodDays(d)}
+                        className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all ${
+                          periodDays === d
+                            ? `${accentBtn} text-white scale-105 shadow-sm`
+                            : 'bg-white text-gray-600 hover:bg-gray-50'
+                        }`}
+                      >
+                        {d}일
+                      </button>
+                    ))}
+                  </div>
                 </div>
+
+                {/* 생리 시작일 버튼 or 선택됨 표시 */}
+                {isCycleStarted ? (
+                  <div className={`flex items-center justify-between bg-white border-2 ${accentBorder} rounded-xl px-4 py-2.5`}>
+                    <span className={`text-sm font-semibold ${accentText}`}>
+                      ✓ 생리 시작일 ({periodDays}일)
+                    </span>
+                    <button
+                      onClick={() => setCycleStarted(prev => ({ ...prev, [tab]: false }))}
+                      className="text-xs text-gray-400 hover:text-gray-600"
+                    >
+                      취소
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setCycleStarted(prev => ({ ...prev, [tab]: true }))}
+                    className={`w-full py-2.5 rounded-xl text-white text-sm font-medium transition-colors ${accentBtn}`}
+                  >
+                    생리 시작일
+                  </button>
+                )}
               </div>
             ) : (
-              !isFuture ? (
-                <button
-                  onClick={() => handleStartCycle(tab)}
-                  disabled={saving}
-                  className={`w-full py-2.5 rounded-xl text-white text-sm font-medium transition-colors disabled:opacity-50 ${accentBtn}`}
-                >
-                  이 날 생리 시작으로 기록
-                </button>
-              ) : (
-                <p className="text-sm text-gray-400">미래 날짜에는 기록할 수 없어요</p>
-              )
+              <p className="text-sm text-gray-400">미래 날짜에는 기록할 수 없어요</p>
             )}
           </div>
 
@@ -313,11 +452,11 @@ export default function DayModal({ date, cycles, symptoms: initSymptoms, onClose
               {/* Save / Delete buttons */}
               <div className="flex gap-2">
                 <button
-                  onClick={() => handleSaveSymptoms(tab)}
+                  onClick={() => handleSave(tab)}
                   disabled={saving}
                   className={`flex-1 py-3 rounded-xl text-white font-medium transition-colors disabled:opacity-50 ${accentBtn}`}
                 >
-                  {existingSymptom ? '증상 수정' : '증상 저장'}
+                  {saving ? '저장 중...' : existingSymptom ? '수정' : '저장'}
                 </button>
                 {existingSymptom && (
                   <button

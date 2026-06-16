@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- White circle background -->
+  <circle cx="256" cy="256" r="230" fill="white"/>
+
+  <!-- Heart shape with 3D pink effect -->
+  <defs>
+    <radialGradient id="heartGrad" cx="45%" cy="35%" r="60%">
+      <stop offset="0%" stop-color="#ffb3c6"/>
+      <stop offset="40%" stop-color="#ff85a1"/>
+      <stop offset="100%" stop-color="#e75480"/>
+    </radialGradient>
+    <radialGradient id="highlightGrad" cx="35%" cy="25%" r="40%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.7)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </radialGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#d4607a" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+
+  <!-- Main heart -->
+  <path
+    d="M256 390 C256 390 100 290 100 185 C100 130 145 95 195 95 C220 95 245 108 256 128 C267 108 292 95 317 95 C367 95 412 130 412 185 C412 290 256 390 256 390Z"
+    fill="url(#heartGrad)"
+    filter="url(#shadow)"
+  />
+
+  <!-- Highlight overlay -->
+  <path
+    d="M256 390 C256 390 100 290 100 185 C100 130 145 95 195 95 C220 95 245 108 256 128 C267 108 292 95 317 95 C367 95 412 130 412 185 C412 290 256 390 256 390Z"
+    fill="url(#highlightGrad)"
+  />
+
+  <!-- Small shine spot -->
+  <ellipse cx="195" cy="145" rx="28" ry="20" fill="rgba(255,255,255,0.5)" transform="rotate(-20,195,145)"/>
+</svg>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
@@ -8,6 +8,11 @@ export default function LoginPage() {
   const [error, setError] = useState(false)
   const [loading, setLoading] = useState(false)
   const router = useRouter()
+
+  // 페이지 로드 시 대시보드 미리 프리페치
+  useEffect(() => {
+    router.prefetch('/dashboard')
+  }, [router])
 
   const submitPin = async (pinValue: string) => {
     setLoading(true)
@@ -48,8 +53,8 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-pink-100 via-rose-50 to-pink-200 flex items-center justify-center px-4">
       <div className="bg-white rounded-3xl shadow-xl p-8 w-full max-w-xs">
         <div className="text-center mb-8">
-          <div className="text-5xl mb-3">🌸</div>
-          <h1 className="text-2xl font-bold text-gray-800">우리 가족 달력</h1>
+          <img src="/icon.svg" alt="heart" className="w-20 h-20 mx-auto mb-3" />
+          <h1 className="text-2xl font-bold text-gray-800">여성 달력</h1>
           <p className="text-gray-400 text-sm mt-1">PIN 4자리를 입력해주세요</p>
         </div>
 
