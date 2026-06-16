@@ -36,10 +36,9 @@ export default function DashboardPage() {
       getPersonSettings(),
     ])
     if (c.error) {
-      if (retry < 12) {
-        // Supabase 재시작 중일 수 있으므로 15초 후 자동 재시도 (최대 3분)
+      if (retry < 6) {
         setTimeout(() => fetchData(retry + 1), 15000)
-        setFetchError(`서버 재시작 중... 잠시만 기다려주세요 (${retry + 1}/12)`)
+        setFetchError(`서버 재시작 중... 잠시만 기다려주세요 (${retry + 1}/6)`)
       } else {
         setFetchError(c.error.message)
       }
