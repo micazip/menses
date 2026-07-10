@@ -167,13 +167,20 @@ export default function DashboardPage() {
 
           {/* 동기화 실패시에만 표시 */}
           {syncError && (
-            <div className="mt-1 flex items-center justify-center gap-2">
-              <span className="text-xs text-orange-400">저장된 데이터 표시 중</span>
+            <div className="mt-1 flex items-center justify-center gap-2 flex-wrap">
+              <a
+                href="https://supabase.com/dashboard/project/gdzkcsfxgypasgigbvuw"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs bg-rose-400 text-white px-3 py-1 rounded-full font-medium"
+              >
+                서버 시작하기
+              </a>
               <button
                 onClick={() => fetchData(0)}
-                className="text-xs text-rose-400 underline"
+                className="text-xs text-gray-400 underline"
               >
-                새로고침
+                연결 재시도
               </button>
             </div>
           )}
