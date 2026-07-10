@@ -165,20 +165,15 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* 동기화 상태 배너 */}
-          {syncing && (
-            <div className="mt-1 text-center text-xs text-gray-400 animate-pulse">
-              서버 연결 중...
-            </div>
-          )}
+          {/* 동기화 실패시에만 표시 */}
           {syncError && (
             <div className="mt-1 flex items-center justify-center gap-2">
-              <span className="text-xs text-orange-400">오프라인 모드 (저장된 데이터 표시 중)</span>
+              <span className="text-xs text-orange-400">저장된 데이터 표시 중</span>
               <button
                 onClick={() => fetchData(0)}
                 className="text-xs text-rose-400 underline"
               >
-                재시도
+                새로고침
               </button>
             </div>
           )}
