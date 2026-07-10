@@ -13,12 +13,32 @@ const DEFAULT_CYCLE_SETTINGS: Record<Person, number> = {
   big: 28, small: 28, mom: 28,
 }
 
+const CACHE_KEY = 'cycle-tracker-v1'
+
+type CacheData = {
+  cycles: Cycle[]
+  symptoms: Symptom[]
+  cycleSettings: Record<Person, number>
+}
+
+function loadCache(): CacheData | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
+function saveCache(data: CacheData) {
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify(data)) } catch {}
+}
+
 export default function DashboardPage() {
   const [cycles, setCycles] = useState<Cycle[]>([])
   const [symptoms, setSymptoms] = useState<Symptom[]>([])
   const [cycleSettings, setCycleSettings] = useState<Record<Person, number>>(DEFAULT_CYCLE_SETTINGS)
   const [loading, setLoading] = useState(true)
-  const [fetchError, setFetchError] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
+  const [syncError, setSyncError] = useState(false)
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
   const [selectedPerson, setSelectedPerson] = useState<Person | undefined>(undefined)
   const [settingsPerson, setSettingsPerson] = useState<Person | null>(null)
@@ -27,9 +47,20 @@ export default function DashboardPage() {
   const [year, setYear] = useState(now.getFullYear())
   const [month, setMonth] = useState(now.getMonth())
 
+  // 캐시 먼저 표시
+  useEffect(() => {
+    const cached = loadCache()
+    if (cached) {
+      setCycles(cached.cycles)
+      setSymptoms(cached.symptoms)
+      setCycleSettings(cached.cycleSettings)
+      setLoading(false)
+    }
+  }, [])
+
   const fetchData = useCallback(async (retry = 0) => {
-    setFetchError(null)
-    setLoading(true)
+    setSyncing(true)
+    setSyncError(false)
     const [c, s, ps] = await Promise.all([
       supabase.from('cycles').select('*').order('start_date', { ascending: false }),
       supabase.from('symptoms').select('*'),
@@ -38,22 +69,27 @@ export default function DashboardPage() {
     if (c.error) {
       if (retry < 6) {
         setTimeout(() => fetchData(retry + 1), 15000)
-        setFetchError(`서버 재시작 중... 잠시만 기다려주세요 (${retry + 1}/6)`)
       } else {
-        setFetchError(c.error.message)
+        setSyncing(false)
+        setSyncError(true)
       }
       setLoading(false)
       return
     }
-    if (c.data) setCycles(c.data)
-    if (s.data) setSymptoms(s.data)
+    const newCycles = c.data ?? []
+    const newSymptoms = s.data ?? []
+    const newSettings = { ...DEFAULT_CYCLE_SETTINGS }
     if (Array.isArray(ps) && ps.length > 0) {
-      const settings = { ...DEFAULT_CYCLE_SETTINGS }
       ps.forEach((row: { person: string; cycle_length: number }) => {
-        settings[row.person as Person] = row.cycle_length
+        newSettings[row.person as Person] = row.cycle_length
       })
-      setCycleSettings(settings)
     }
+    setCycles(newCycles)
+    setSymptoms(newSymptoms)
+    setCycleSettings(newSettings)
+    saveCache({ cycles: newCycles, symptoms: newSymptoms, cycleSettings: newSettings })
+    setSyncing(false)
+    setSyncError(false)
     setLoading(false)
   }, [])
 
@@ -94,7 +130,6 @@ export default function DashboardPage() {
             >
               여성 달력
             </h1>
-            {/* 클릭 가능한 범례 */}
             <div className="flex gap-3">
               {PERSONS.map(p => (
                 <button
@@ -129,6 +164,24 @@ export default function DashboardPage() {
               )}
             </div>
           )}
+
+          {/* 동기화 상태 배너 */}
+          {syncing && (
+            <div className="mt-1 text-center text-xs text-gray-400 animate-pulse">
+              서버 연결 중...
+            </div>
+          )}
+          {syncError && (
+            <div className="mt-1 flex items-center justify-center gap-2">
+              <span className="text-xs text-orange-400">오프라인 모드 (저장된 데이터 표시 중)</span>
+              <button
+                onClick={() => fetchData(0)}
+                className="text-xs text-rose-400 underline"
+              >
+                재시도
+              </button>
+            </div>
+          )}
         </div>
       </header>
 
@@ -138,24 +191,6 @@ export default function DashboardPage() {
             <div className="text-center">
               <div className="text-3xl mb-2 animate-pulse">🌸</div>
               <p className="text-gray-400 text-sm">불러오는 중...</p>
-            </div>
-          </div>
-        ) : fetchError ? (
-          <div className="flex items-center justify-center py-24">
-            <div className="text-center">
-              <div className="text-3xl mb-3">{fetchError.includes('재시도') ? '⏳' : '⚠️'}</div>
-              <p className="text-red-400 text-sm font-medium mb-1">
-                {fetchError.includes('재시도') ? '서버를 깨우는 중이에요' : '데이터를 불러오지 못했어요'}
-              </p>
-              <p className="text-gray-400 text-xs mb-4">{fetchError}</p>
-              {!fetchError.includes('재시도') && (
-                <button
-                  onClick={() => fetchData(0)}
-                  className="px-4 py-2 bg-rose-400 text-white rounded-xl text-sm font-medium hover:bg-rose-500"
-                >
-                  다시 시도
-                </button>
-              )}
             </div>
           </div>
         ) : (
