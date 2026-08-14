@@ -40,6 +40,7 @@ export default function DayModal({ date, cycles: initCycles, symptoms: initSympt
   }
   const [tab, setTab] = useState<Person>(getInitialTab)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [periodDays, setPeriodDays] = useState(6)
   const [editPeriodDays, setEditPeriodDays] = useState(6)
   const [editingPeriod, setEditingPeriod] = useState(false)
@@ -81,46 +82,49 @@ export default function DayModal({ date, cycles: initCycles, symptoms: initSympt
   // "저장" 버튼: 생리 시작(선택된 경우) + 증상을 한번에 저장
   const handleSave = async (person: Person) => {
     setSaving(true)
+    setSaveError(null)
     const form = forms[person]
     try {
-      // 생리 시작일이 선택된 경우 저장
       if (cycleStarted[person]) {
         const endDate = new Date(date)
         endDate.setDate(endDate.getDate() + periodDays - 1)
         const endDateStr = endDate.toISOString().split('T')[0]
 
-        // 새 사이클과 겹치는 기존 사이클 삭제 (중복 방지)
         const overlapping = localCycles.filter(c =>
           c.person === person &&
           c.start_date <= endDateStr &&
           (!c.end_date || c.end_date >= date)
         )
         for (const c of overlapping) {
-          await supabase.from('cycles').delete().eq('id', c.id)
+          const { error } = await supabase.from('cycles').delete().eq('id', c.id)
+          if (error) throw error
         }
 
-        await supabase.from('cycles').insert({ person, start_date: date, end_date: endDateStr })
+        const { error } = await supabase.from('cycles').insert({ person, start_date: date, end_date: endDateStr })
+        if (error) throw error
       }
 
-      // 증상 저장
       const existing = localSymptoms.find(s => s.person === person && s.date === date)
       if (existing) {
-        await supabase.from('symptoms').update({
+        const { error } = await supabase.from('symptoms').update({
           pain_level: form.pain_level,
           headache: form.headache,
           notes: form.notes.trim() || null,
         }).eq('id', existing.id)
+        if (error) throw error
       } else if (cycleStarted[person] || form.pain_level > 0 || form.headache || form.notes.trim()) {
-        // 증상이 있거나 생리 시작일 기록할 때만 증상 저장
-        await supabase.from('symptoms').insert({
+        const { error } = await supabase.from('symptoms').insert({
           person, date,
           pain_level: form.pain_level,
           headache: form.headache,
           notes: form.notes.trim() || null,
         })
+        if (error) throw error
       }
 
       onClose()
+    } catch {
+      setSaveError('저장 실패. 서버 연결을 확인해주세요.')
     } finally {
       setSaving(false)
     }
@@ -449,6 +453,9 @@ export default function DayModal({ date, cycles: initCycles, symptoms: initSympt
                 />
               </div>
 
+              {saveError && (
+                <p className="text-xs text-red-400 mb-2 text-center">{saveError}</p>
+              )}
               {/* Save / Delete buttons */}
               <div className="flex gap-2">
                 <button
