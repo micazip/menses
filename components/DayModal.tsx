@@ -446,7 +446,7 @@ export default function DayModal({ date, cycles: initCycles, symptoms: initSympt
                   onChange={e => {
                     if (e.target.value.length <= 80) setForm(tab, 'notes', e.target.value)
                   }}
-                  placeholder="오늘 몸 상태를 간단히 적어보세요"
+                  placeholder="오늘 몸 상태를 간단히 적어봐요"
                   className="w-full rounded-xl border border-gray-200 p-3 text-sm text-gray-700 resize-none focus:outline-none focus:border-rose-300 transition-colors"
                   rows={3}
                   maxLength={80}
