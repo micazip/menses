@@ -14,6 +14,7 @@ export async function GET() {
     if (error) throw error
     return NextResponse.json({ ok: true, time: new Date().toISOString() })
   } catch (e) {
-    return NextResponse.json({ ok: false, error: String(e) }, { status: 500 })
+    const msg = e instanceof Error ? e.message : JSON.stringify(e)
+    return NextResponse.json({ ok: false, error: msg }, { status: 500 })
   }
 }
