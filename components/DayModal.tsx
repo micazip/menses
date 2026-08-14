@@ -88,7 +88,7 @@ export default function DayModal({ date, cycles: initCycles, symptoms: initSympt
       if (cycleStarted[person]) {
         const endDate = new Date(date)
         endDate.setDate(endDate.getDate() + periodDays - 1)
-        const endDateStr = endDate.toISOString().split('T')[0]
+        const endDateStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`
 
         const overlapping = localCycles.filter(c =>
           c.person === person &&
@@ -137,7 +137,7 @@ export default function DayModal({ date, cycles: initCycles, symptoms: initSympt
     try {
       const endDate = new Date(c.start_date)
       endDate.setDate(endDate.getDate() + editPeriodDays - 1)
-      const endDateStr = endDate.toISOString().split('T')[0]
+      const endDateStr = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`
       await supabase.from('cycles').update({ end_date: endDateStr }).eq('id', c.id)
       setLocalCycles(prev => prev.map(x => x.id === c.id ? { ...x, end_date: endDateStr } : x))
       setEditingPeriod(false)
